@@ -2,11 +2,17 @@
 
 > **TomFit fork.** This is the [TomFit](https://github.com/TomFitAG) fork of
 > [ALAlliancetek/twilio_conversation_sdk](https://github.com/ALAlliancetek/twilio_conversation_sdk),
-> carrying an **Android-only** patch for a listener sync race in
-> `ConversationHandler` that crashed the host app via
-> `IllegalStateException: Messages are not available at the moment. Synchronize the
-> conversation first.` iOS is unchanged. See `CHANGELOG.md` (`0.4.2+tomfit.1`) for
-> details. An upstream PR is open; this override should be dropped once it lands.
+> carrying two native crash fixes on top of upstream `0.4.2`:
+>
+> - **Android** — listener sync race in `ConversationHandler` that crashed the
+>   host app via `IllegalStateException: Messages are not available at the
+>   moment. Synchronize the conversation first.`
+> - **Android & iOS** — shut down any prior `ConversationsClient` before
+>   re-initializing, so an orphaned client/transport can't crash later when the
+>   server sends a close frame against a dead Twilsock transport.
+>
+> See `CHANGELOG.md` (`0.4.2+tomfit.1`) for details. An upstream PR is open for
+> the Android sync-race fix; that override should be dropped once it lands.
 
 # Introduction
 

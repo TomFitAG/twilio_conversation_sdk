@@ -1,10 +1,12 @@
 ## 0.4.2+tomfit.1
-TomFit fork patch (Android only). Fixes a listener sync race in
-`ConversationHandler` where message-reading methods were invoked on a
-`Conversation` before it had reached `SynchronizationStatus.ALL`. The native
-Twilio SDK throws `IllegalStateException: Messages are not available at the
-moment. Synchronize the conversation first.` from `RethrowingForwarder` on the
-main looper, which kills the host app and cannot be caught from Dart.
+TomFit fork patch bundling two native crash fixes.
+
+**Android — listener sync race fix.** Fixes a race in `ConversationHandler`
+where message-reading methods were invoked on a `Conversation` before it had
+reached `SynchronizationStatus.ALL`. The native Twilio SDK throws
+`IllegalStateException: Messages are not available at the moment. Synchronize
+the conversation first.` from `RethrowingForwarder` on the main looper, which
+kills the host app and cannot be caught from Dart.
 
 `ConversationHandler.java`: adds a `runWhenSynchronized` helper and a
 `ConversationListenerAdapter`, and gates five call sites on the conversation's
@@ -14,7 +16,14 @@ message), `getMessageByIndex` (delete by index), `getUnreadMessagesCount`, and
 Flutter side receives an empty result (or the existing failure value) instead
 of a crash.
 
-iOS is unchanged in this release.
+**Android & iOS — shut down prior client before re-init.** On logout/re-login
+an orphaned `ConversationsClient` could linger and crash later when the server
+sent a close/reply frame against a dead transport (TwilsockLib state-machine
+transition). `ConversationHandler.java#initializeConversationClient` and
+`ConversationHandler.swift#loginWithAccessToken` now call `shutdown()` on any
+existing client before creating a new one. The Android guard swallows
+`Throwable` from `shutdown()` so init can still proceed if a prior client is
+already in a bad state.
 
 ## 0.4.2
 Minor Bug Fixes
