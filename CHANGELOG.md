@@ -1,3 +1,21 @@
+## 0.4.2+tomfit.1
+TomFit fork patch (Android only). Fixes a listener sync race in
+`ConversationHandler` where message-reading methods were invoked on a
+`Conversation` before it had reached `SynchronizationStatus.ALL`. The native
+Twilio SDK throws `IllegalStateException: Messages are not available at the
+moment. Synchronize the conversation first.` from `RethrowingForwarder` on the
+main looper, which kills the host app and cannot be caught from Dart.
+
+`ConversationHandler.java`: adds a `runWhenSynchronized` helper and a
+`ConversationListenerAdapter`, and gates five call sites on the conversation's
+sync status — `getAllMessages` (stack-trace site), `getLastMessages` (single
+message), `getMessageByIndex` (delete by index), `getUnreadMessagesCount`, and
+`findMessageBySid` (delete by SID). On failure or unrecoverable sync state, the
+Flutter side receives an empty result (or the existing failure value) instead
+of a crash.
+
+iOS is unchanged in this release.
+
 ## 0.4.2
 Minor Bug Fixes
 
