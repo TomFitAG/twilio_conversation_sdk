@@ -253,14 +253,17 @@ class ConversationsHandler: NSObject, TwilioConversationsClientDelegate {
     
     
     func loginWithAccessToken(_ token: String, completion: @escaping (TCHResult?) -> Void) {
-        // Set up Twilio Conversations client
+        // Tear down any prior client before creating a new one. Without this, an
+        // orphaned client keeps its Twilsock transport alive in the background and
+        // crashes inside TwilsockLib when the server later sends a close/reply
+        // frame (state-machine transition on a dead transport).
+        shutdown()
+
         TwilioConversationsClient.conversationsClient(withToken: token,
                                                       properties: nil,
                                                       delegate: self) { (result, client) in
             self.client = client
             self.clientDelegate?.onClientSynchronizationChanged(status: ["status" : client?.synchronizationStatus.rawValue ?? -1])
-            print("\(client?.synchronizationStatus.rawValue ?? -1)")
-            //            self.client?.delegate?.conversationsClient?(<#T##client: TwilioConversationsClient##TwilioConversationsClient#>, synchronizationStatusUpdated: TCHClientSynchronizationStatus)
             completion(result)
         }
     }

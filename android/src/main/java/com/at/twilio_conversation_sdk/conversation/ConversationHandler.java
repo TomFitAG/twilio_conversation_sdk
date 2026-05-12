@@ -39,7 +39,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TimeZone;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.MethodChannel;
@@ -50,6 +52,87 @@ public class ConversationHandler {
     public static FlutterPlugin.FlutterPluginBinding flutterPluginBinding;
     private static MessageInterface messageInterface;
     private static AccessTokenInterface accessTokenInterface;
+
+    /// No-op ConversationListener so call sites that only need onSynchronizationChanged
+    /// don't have to stub the entire interface.
+    private static class ConversationListenerAdapter implements ConversationListener {
+        @Override public void onMessageAdded(Message message) {}
+        @Override public void onMessageUpdated(Message message, Message.UpdateReason reason) {}
+        @Override public void onMessageDeleted(Message message) {}
+        @Override public void onParticipantAdded(Participant participant) {}
+        @Override public void onParticipantUpdated(Participant participant, Participant.UpdateReason reason) {}
+        @Override public void onParticipantDeleted(Participant participant) {}
+        @Override public void onTypingStarted(Conversation conversation, Participant participant) {}
+        @Override public void onTypingEnded(Conversation conversation, Participant participant) {}
+        @Override public void onSynchronizationChanged(Conversation conversation) {}
+    }
+
+    /// Distinct ErrorInfo code so callers can tell a "conversation not synchronized"
+    /// outcome apart from an SDK-reported error.
+    static final int CONV_NOT_SYNCED_ERROR_CODE = -2;
+
+    /// Wraps a call into a try/catch that routes IllegalStateException to onFailure.
+    /// Belt-and-suspenders: even after the sync gate, if the SDK still throws we don't
+    /// let the exception escape onto the main looper.
+    private static void executeAction(Runnable action, Runnable onFailure) {
+        try { action.run(); } catch (IllegalStateException e) { onFailure.run(); }
+    }
+
+    /// Runs `action` once the Conversation has reached SynchronizationStatus.ALL.
+    /// If sync status is (or transitions to) FAILED, invokes `onFailure` instead.
+    /// Exactly one of `action`/`onFailure` runs, exactly once.
+    ///
+    /// Implementation notes:
+    /// - Registers the listener BEFORE re-reading status to close the TOCTOU window
+    ///   where the conversation could transition between the check and addListener.
+    /// - An AtomicBoolean guards against the listener firing in parallel with the
+    ///   post-attach status re-check, so neither side can double-deliver.
+    private static void runWhenSynchronized(Conversation conversation,
+                                            Runnable action,
+                                            Runnable onFailure) {
+        Conversation.SynchronizationStatus initial = conversation.getSynchronizationStatus();
+        if (initial == Conversation.SynchronizationStatus.ALL) {
+            executeAction(action, onFailure);
+            return;
+        }
+        if (initial == Conversation.SynchronizationStatus.FAILED) {
+            onFailure.run();
+            return;
+        }
+
+        AtomicBoolean delivered = new AtomicBoolean(false);
+        AtomicReference<ConversationListener> listenerRef = new AtomicReference<>();
+        ConversationListener listener = new ConversationListenerAdapter() {
+            @Override
+            public void onSynchronizationChanged(Conversation c) {
+                Conversation.SynchronizationStatus current = c.getSynchronizationStatus();
+                if (current == Conversation.SynchronizationStatus.ALL
+                        && delivered.compareAndSet(false, true)) {
+                    c.removeListener(listenerRef.get());
+                    executeAction(action, onFailure);
+                } else if (current == Conversation.SynchronizationStatus.FAILED
+                        && delivered.compareAndSet(false, true)) {
+                    c.removeListener(listenerRef.get());
+                    onFailure.run();
+                }
+            }
+        };
+        listenerRef.set(listener);
+        conversation.addListener(listener);
+
+        // Close the TOCTOU window: the conversation may have transitioned to a terminal
+        // state between the initial check and addListener.
+        Conversation.SynchronizationStatus now = conversation.getSynchronizationStatus();
+        if (now == Conversation.SynchronizationStatus.ALL
+                && delivered.compareAndSet(false, true)) {
+            conversation.removeListener(listener);
+            executeAction(action, onFailure);
+        } else if (now == Conversation.SynchronizationStatus.FAILED
+                && delivered.compareAndSet(false, true)) {
+            conversation.removeListener(listener);
+            onFailure.run();
+        }
+    }
 
     /// Generate token and authenticate user #
     public static String generateAccessToken(String accountSid, String apiKey, String apiSecret, String identity, String serviceSid, String pushSid) {
@@ -552,7 +635,7 @@ public class ConversationHandler {
                 AtomicInteger pendingCallbacks = new AtomicInteger(1); // Track pending callbacks
                 Map<String, Object> conversationMap = new HashMap<>();
 
-                conversation.getLastMessages(1, new CallbackListener<List<Message>>() {
+                runWhenSynchronized(conversation, () -> conversation.getLastMessages(1, new CallbackListener<List<Message>>() {
                     @Override
                     public void onSuccess(List<Message> messages) {
                         if (!messages.isEmpty()) {
@@ -609,7 +692,7 @@ public class ConversationHandler {
                         list.add(messagesMap);
                         result.success(list);
                     }
-                });
+                }), () -> result.success(new ArrayList<>()));
             }
 
             @Override
@@ -625,7 +708,7 @@ public class ConversationHandler {
             @Override
             public void onSuccess(Conversation conversation) {
                 Map<String, Object> conversationMap = new HashMap<>();
-                conversation.getUnreadMessagesCount(new CallbackListener<Long>() {
+                runWhenSynchronized(conversation, () -> conversation.getUnreadMessagesCount(new CallbackListener<Long>() {
                     @Override
                     public void onSuccess(Long data) {
 
@@ -636,7 +719,7 @@ public class ConversationHandler {
 
                         result.success(list);
                     }
-                });
+                }), () -> result.success(new ArrayList<>()));
             }
 
             @Override
@@ -658,7 +741,7 @@ public class ConversationHandler {
         conversationClient.getConversation(conversationId, new CallbackListener<Conversation>() {
             @Override
             public void onSuccess(Conversation conversation) {
-                conversation.getLastMessages((messageCount != null) ? messageCount : 1000, new CallbackListener<List<Message>>() {
+                runWhenSynchronized(conversation, () -> conversation.getLastMessages((messageCount != null) ? messageCount : 1000, new CallbackListener<List<Message>>() {
                     @Override
                     public void onSuccess(List<Message> messagesList) {
                         int[] pendingMediaCount = {0}; // Counter for pending media URL fetches
@@ -745,7 +828,7 @@ public class ConversationHandler {
                         result.success(list);
                         //result.error("MESSAGE_RETRIEVAL_ERROR", errorInfo.getMessage(), null);
                     }
-                });
+                }), () -> result.success(new ArrayList<>()));
             }
 
             @Override
@@ -795,7 +878,7 @@ public class ConversationHandler {
             public void onSuccess(Conversation conversation) {
                 System.err.println("Conversation retrieved successfully.");
 
-                conversation.getMessageByIndex(index, new CallbackListener<Message>() {
+                runWhenSynchronized(conversation, () -> conversation.getMessageByIndex(index, new CallbackListener<Message>() {
                     @Override
                     public void onSuccess(Message message) {
                         System.err.println("Message retrieved successfully. Message: " + message + " Body: " + message.getBody());
@@ -822,7 +905,7 @@ public class ConversationHandler {
                         System.err.println("Failed to retrieve message by index. Error: " + errorInfo.getMessage());
                         result.success(Strings.failed);
                     }
-                });
+                }), () -> result.success(Strings.failed));
             }
 
             @Override
@@ -857,7 +940,11 @@ public class ConversationHandler {
 
                     @Override
                     public void onError(ErrorInfo errorInfo) {
-                        result.error("msg_not_found", errorInfo.getMessage(), null);
+                        if (errorInfo.getCode() == CONV_NOT_SYNCED_ERROR_CODE) {
+                            result.error("conv_not_synced", errorInfo.getMessage(), null);
+                        } else {
+                            result.error("msg_not_found", errorInfo.getMessage(), null);
+                        }
                     }
                 });
             }
@@ -871,7 +958,7 @@ public class ConversationHandler {
 
     private static void findMessageBySid(Conversation conversation, String messageSid, Integer messageCount,
                                          CallbackListener<Message> listener) {
-        conversation.getLastMessages(messageCount, new CallbackListener<List<Message>>() {
+        runWhenSynchronized(conversation, () -> conversation.getLastMessages(messageCount, new CallbackListener<List<Message>>() {
             @Override
             public void onSuccess(List<Message> messages) {
                 for (Message msg : messages) {
@@ -887,11 +974,24 @@ public class ConversationHandler {
             public void onError(ErrorInfo errorInfo) {
                 listener.onError(errorInfo);
             }
-        });
+        }), () -> listener.onError(new ErrorInfo(CONV_NOT_SYNCED_ERROR_CODE, "Conversation not synchronized")));
     }
 
 
     public static void initializeConversationClient(String accessToken, MethodChannel.Result result, ClientInterface clientInterface) {
+        // Tear down any prior client before creating a new one. Mirrors the iOS
+        // guard in ConversationHandler.swift:loginWithAccessToken to avoid an
+        // orphaned client lingering after logout/re-login.
+        if (conversationClient != null) {
+            try {
+                conversationClient.shutdown();
+            } catch (Throwable ignored) {
+                // shutdown() should not throw, but make the guard non-fatal so init
+                // can still proceed if a prior client is already in a bad state.
+            }
+            conversationClient = null;
+        }
+
         ConversationsClient.Properties props = ConversationsClient.Properties.newBuilder().createProperties();
         ConversationsClient.create(flutterPluginBinding.getApplicationContext(), accessToken, props, new CallbackListener<ConversationsClient>() {
             @Override
