@@ -979,6 +979,19 @@ public class ConversationHandler {
 
 
     public static void initializeConversationClient(String accessToken, MethodChannel.Result result, ClientInterface clientInterface) {
+        // Tear down any prior client before creating a new one. Mirrors the iOS
+        // guard in ConversationHandler.swift:loginWithAccessToken to avoid an
+        // orphaned client lingering after logout/re-login.
+        if (conversationClient != null) {
+            try {
+                conversationClient.shutdown();
+            } catch (Throwable ignored) {
+                // shutdown() should not throw, but make the guard non-fatal so init
+                // can still proceed if a prior client is already in a bad state.
+            }
+            conversationClient = null;
+        }
+
         ConversationsClient.Properties props = ConversationsClient.Properties.newBuilder().createProperties();
         ConversationsClient.create(flutterPluginBinding.getApplicationContext(), accessToken, props, new CallbackListener<ConversationsClient>() {
             @Override
