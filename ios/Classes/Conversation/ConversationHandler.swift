@@ -275,6 +275,8 @@ class ConversationsHandler: NSObject, TwilioConversationsClientDelegate {
     
     func createConversation(uniqueConversationName:String,_ completion: @escaping (Bool, TCHConversation?,String) -> Void) {
         guard let client = client else {
+            print("createConversation: client is nil")
+            completion(false, nil, "client not available")
             return
         }
         // Create the conversation if it hasn't been created yet
@@ -293,12 +295,15 @@ class ConversationsHandler: NSObject, TwilioConversationsClientDelegate {
     
     func getConversations(_ completion: @escaping([TCHConversation]) -> Void) {
         guard let client = client else {
+            print("getConversations: client is nil")
+            completion([])
             return
         }
         guard client.synchronizationStatus == .completed else {
+            print("getConversations: client not synced, status=\(client.synchronizationStatus.rawValue)")
+            completion(client.myConversations() ?? [])
             return
         }
-        
         completion(client.myConversations() ?? [])
     }
     
@@ -310,7 +315,12 @@ class ConversationsHandler: NSObject, TwilioConversationsClientDelegate {
     
     func addParticipants(conversationId:String,participantName:String,_ completion: @escaping(TCHResult?) -> Void) {
         self.getConversationFromId(conversationId: conversationId) { conversation in
-            conversation?.addParticipant(byIdentity: participantName, attributes: nil,completion: { status in
+            guard let conversation = conversation else {
+                print("addParticipants: failed to get conversation: \(conversationId)")
+                completion(nil)
+                return
+            }
+            conversation.addParticipant(byIdentity: participantName, attributes: nil,completion: { status in
                 completion(status)
             })
         }
@@ -345,32 +355,40 @@ class ConversationsHandler: NSObject, TwilioConversationsClientDelegate {
     
     func getConversationFromId(conversationId:String,_ completion: @escaping(TCHConversation?) -> Void){
         guard let client = client else {
+            completion(nil)
+            return
+        }
+        // Check local cache first to avoid async lookup that may never call back
+        // for newly created or not-yet-synced conversations.
+        if let local = client.myConversations()?.first(where: {
+            $0.sid == conversationId || $0.uniqueName == conversationId
+        }) {
+            completion(local)
             return
         }
         guard client.synchronizationStatus == .completed else {
+            completion(nil)
             return
         }
         client.conversation(withSidOrUniqueName: conversationId) { (result, conversation) in
-            if let conversationFromSid = conversation {
-                print("message readed")
-                completion(conversationFromSid)
-            }
+            completion(conversation)
         }
     }
     
     func loadPreviousMessages(_ conversation: TCHConversation,_ messageCount: UInt?,_ completion: @escaping([[String: Any]]?) -> Void) {
         print("synchronizationStatus->\(client?.synchronizationStatus == .completed)")
         guard client?.synchronizationStatus == .completed else {
+            completion([])
             return
         }
-        var listOfMessagess: [[String: Any]] = []
         conversation.getLastMessages(withCount: messageCount ?? 1000) { (result, messages) in
-            if let messagesList = messages {
-                self.processMessagesSequentially(messagesList: messagesList) { result in
-                    completion(result) // Return the final processed list
-                }
+            guard let messagesList = messages, !messagesList.isEmpty else {
+                completion([])
+                return
             }
-            
+            self.processMessagesSequentially(messagesList: messagesList) { result in
+                completion(result)
+            }
         }
     }
     
@@ -433,14 +451,16 @@ class ConversationsHandler: NSObject, TwilioConversationsClientDelegate {
     func getLastMessage(_ conversation: TCHConversation,_ messageCount: UInt?,_ completion: @escaping([[String: Any]]?) -> Void) {
         print("synchronizationStatus->\(client?.synchronizationStatus == .completed)")
         guard client?.synchronizationStatus == .completed else {
+            completion([])
             return
         }
-        var listOfMessagess: [[String: Any]] = []
         conversation.getLastMessages(withCount: messageCount ?? 1) { (result, messages) in
-            if let messagesList = messages {
-                self.processMessagesSequentiallyForParticipants(conversation,messagesList: messagesList) { result in
-                    completion(result) // Return the final processed list
-                }
+            guard let messagesList = messages, !messagesList.isEmpty else {
+                completion([])
+                return
+            }
+            self.processMessagesSequentiallyForParticipants(conversation, messagesList: messagesList) { result in
+                completion(result)
             }
         }
     }

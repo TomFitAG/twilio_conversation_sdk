@@ -149,7 +149,8 @@ public class ConversationHandler {
 
             @Override
             public void onError(ErrorInfo errorInfo) {
-                CallbackListener.super.onError(errorInfo);
+                System.out.println("addParticipant: failed to get conversation: " + errorInfo.getMessage());
+                result.success(errorInfo.getMessage());
             }
         });
     }
@@ -552,6 +553,7 @@ public class ConversationHandler {
                 AtomicInteger pendingCallbacks = new AtomicInteger(1); // Track pending callbacks
                 Map<String, Object> conversationMap = new HashMap<>();
 
+                try {
                 conversation.getLastMessages(1, new CallbackListener<List<Message>>() {
                     @Override
                     public void onSuccess(List<Message> messages) {
@@ -609,7 +611,10 @@ public class ConversationHandler {
                         list.add(messagesMap);
                         result.success(list);
                     }
-                });
+                }); } catch (IllegalStateException e) {
+                    System.out.println("getLastMessages: conversation not synced: " + e.getMessage());
+                    result.success(list);
+                }
             }
 
             @Override
@@ -658,6 +663,7 @@ public class ConversationHandler {
         conversationClient.getConversation(conversationId, new CallbackListener<Conversation>() {
             @Override
             public void onSuccess(Conversation conversation) {
+                try {
                 conversation.getLastMessages((messageCount != null) ? messageCount : 1000, new CallbackListener<List<Message>>() {
                     @Override
                     public void onSuccess(List<Message> messagesList) {
@@ -745,7 +751,10 @@ public class ConversationHandler {
                         result.success(list);
                         //result.error("MESSAGE_RETRIEVAL_ERROR", errorInfo.getMessage(), null);
                     }
-                });
+                }); } catch (IllegalStateException e) {
+                    System.out.println("getAllMessages: conversation not synced: " + e.getMessage());
+                    result.success(list);
+                }
             }
 
             @Override

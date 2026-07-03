@@ -109,7 +109,7 @@ public class TwilioConversationSdkPlugin: NSObject, FlutterPlugin,FlutterStreamH
             self.conversationsHandler.createConversation (uniqueConversationName: arguments?["conversationName"] as! String){ (success, conversation,status)  in
                 if success, let conversation = conversation {
                     self.conversationsHandler.joinConversation(conversation) { joinConversationStatus in}
-                    result(Strings.createConversationSuccess)
+                    result(conversation.sid ?? Strings.createConversationSuccess)
                 }else {
                     if (status == Strings.conversationExists) {
                         result(Strings.conversationExists)
@@ -241,6 +241,8 @@ public class TwilioConversationSdkPlugin: NSObject, FlutterPlugin,FlutterStreamH
                     }else {
                         result(addParticipantStatus.resultText)
                     }
+                } else {
+                    result("addParticipant: conversation not available")
                 }
             }
             break
@@ -261,6 +263,8 @@ public class TwilioConversationSdkPlugin: NSObject, FlutterPlugin,FlutterStreamH
                     self.conversationsHandler.joinConversation(conversationFromId) { tchConversationStatus in
                         result(tchConversationStatus)
                     }
+                } else {
+                    result(nil)
                 }
             }
         case Methods.getMessages:
@@ -268,9 +272,10 @@ public class TwilioConversationSdkPlugin: NSObject, FlutterPlugin,FlutterStreamH
                 self.conversationsHandler.conversationId = arguments?["conversationId"] as? String
                 if let conversationFromId = conversation {
                     self.conversationsHandler.loadPreviousMessages(conversationFromId,arguments?["messageCount"] as? UInt) { listOfMessages in
-                        //                      print("listOfMessagess->\(String(describing: listOfMessages))")
                         result(listOfMessages)
                     }
+                } else {
+                    result([])
                 }
             }
             break
@@ -278,9 +283,10 @@ public class TwilioConversationSdkPlugin: NSObject, FlutterPlugin,FlutterStreamH
             self.conversationsHandler.getConversationFromId(conversationId: arguments?["conversationId"] as! String) { conversation in
                 if let conversationFromId = conversation {
                     self.conversationsHandler.getLastMessage(conversationFromId,arguments?["messageCount"] as? UInt) { listOfMessages in
-                        //                      print("listOfMessagess->\(String(describing: listOfMessages))")
                         result(listOfMessages)
                     }
+                } else {
+                    result([])
                 }
             }
             break
