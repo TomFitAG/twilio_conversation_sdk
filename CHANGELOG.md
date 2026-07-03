@@ -1,6 +1,9 @@
 ## 0.4.2
 Minor Bug Fixes
 
+## 0.4.2
+Minor Bug Fixes
+
 ## 0.4.1
 Delete Message from sId for iOS
 
