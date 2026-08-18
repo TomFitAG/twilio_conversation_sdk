@@ -18,9 +18,14 @@ A new Flutter project.
   # (Swift Package Manager) - see https://docs.flutter.dev/packages-and-plugins/swift-package-manager/for-plugin-authors
   s.source_files = 'twilio_conversation_sdk/Sources/twilio_conversation_sdk/**/*.swift'
   s.dependency 'Flutter'
-  # >= 4.0.8 picks up Twilio's fix for a race between updateToken and shutdown in
-  # TwilsockLib; keep in sync with the version constraint in Package.swift.
-  s.dependency 'TwilioConversationsClient', '>= 4.0.8', '< 5.0'
+  # NOTE: this constraint is intentionally looser than the one in Package.swift.
+  # Twilio stopped publishing TwilioConversationsClient to CocoaPods trunk after
+  # 4.0.2 (4.0.3+ are GitHub/SPM-only releases), so '~> 4.0' resolves to 4.0.2 here
+  # - the newest version this podspec can actually get. Do not bump this to match
+  # Package.swift's floor; that broke `pod install` entirely (see CHANGELOG for
+  # v0.4.3+tomfit.2). If Twilio ever resumes CocoaPods releases, '~> 4.0' will
+  # pick those up automatically without another manual bump.
+  s.dependency 'TwilioConversationsClient', '~> 4.0'
   s.platform = :ios, '13.0'
 
   # Flutter.framework does not contain a i386 slice.

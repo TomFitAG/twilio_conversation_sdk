@@ -1,3 +1,13 @@
+## 0.4.3+tomfit.2
+Fixed a broken CocoaPods dependency introduced in v0.4.3+tomfit.1: adding Swift Package Manager
+support bumped `ios/twilio_conversation_sdk.podspec`'s `TwilioConversationsClient` constraint from
+`~> 4.0` to `>= 4.0.8, < 5.0` to "match" `Package.swift`, but Twilio never published
+`TwilioConversationsClient` past 4.0.2 to CocoaPods trunk (4.0.3+ are GitHub/SPM-only releases). This
+made `pod install` fail outright for any app still on CocoaPods. Reverted the podspec constraint to
+`~> 4.0` (resolves to 4.0.2, the newest version CocoaPods actually has); left `Package.swift`'s
+`.upToNextMajor(from: "4.0.8")` untouched, since the SPM path does have access to 4.0.8+. The two
+manifests now intentionally target different version floors - see the comments in each file.
+
 ## 0.4.3+tomfit.1
 Merged upstream 0.4.3 (iOS hanging-callback fixes, Android IllegalStateException guard) with the
 TomFit fork's native crash fixes (Android sync-gated message calls, iOS client shutdown-before-reinit).
