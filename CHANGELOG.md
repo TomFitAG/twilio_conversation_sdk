@@ -1,3 +1,11 @@
+## 0.4.3+tomfit.1
+Merged upstream 0.4.3 (iOS hanging-callback fixes, Android IllegalStateException guard) with the
+TomFit fork's native crash fixes (Android sync-gated message calls, iOS client shutdown-before-reinit).
+Added Swift Package Manager support for the iOS plugin alongside the existing CocoaPods podspec.
+
+## 0.4.3
+Minor Bug Fixes
+
 ## 0.4.2
 Minor Bug Fixes
 
