@@ -13,9 +13,15 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "FlutterFramework", path: "../FlutterFramework"),
-        // Twilio's official SPM distribution of the Conversations client. Version
-        // constraint mirrors the podspec's `~> 4.0` (>= 4.0.8 to pick up the fix for
-        // the updateToken/shutdown race in TwilsockLib, < 5.0).
+        // Twilio's official SPM distribution of the Conversations client. Floor is
+        // 4.0.8 to pick up Twilio's fix for a race between updateToken and shutdown
+        // in TwilsockLib.
+        //
+        // NOTE: this intentionally does NOT match the podspec's `~> 4.0` constraint.
+        // Twilio stopped publishing TwilioConversationsClient to CocoaPods trunk
+        // after 4.0.2, so 4.0.3-4.0.8+ only exist as GitHub/SPM releases - the SPM
+        // path can require them, the CocoaPods path can't. Don't "fix" this by
+        // re-syncing the two; that's what broke `pod install` in v0.4.3+tomfit.1.
         .package(url: "https://github.com/twilio/conversations-ios", .upToNextMajor(from: "4.0.8"))
     ],
     targets: [
